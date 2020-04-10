@@ -117,6 +117,9 @@ extern Tcl_Obj *Tcl_ObjSetVar2(Tcl_Interp *interp, Tcl_Obj *part1Ptr, Tcl_Obj *p
 #    define PATH_MAX MAX_PATH
 #    define isatty _isatty
 #    define fileno _fileno
+#  else
+//   Due to issue with constids.inc
+#    undef TRANSPARENT
 #  endif
 #endif
 
