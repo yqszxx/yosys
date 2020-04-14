@@ -749,6 +749,12 @@ std::map<unsigned int, RTLIL::Module*> *RTLIL::Module::get_all_modules(void)
 
 void RTLIL::Module::makeblackbox()
 {
+	pool<RTLIL::Wire*> delwires;
+
+	for (auto it = wires_.begin(); it != wires_.end(); ++it)
+		if (!it->second->port_input && !it->second->port_output)
+			delwires.insert(it->second);
+
 	for (auto it = memories.begin(); it != memories.end(); ++it)
 		delete it->second;
 	memories.clear();
@@ -761,14 +767,7 @@ void RTLIL::Module::makeblackbox()
 		delete it->second;
 	processes.clear();
 
-	connections_.clear();
-
-	pool<RTLIL::Wire*> delwires;
-	for (auto it = wires_.begin(); it != wires_.end(); ++it)
-		if (!it->second->port_input && !it->second->port_output)
-			delwires.insert(it->second);
 	remove(delwires);
-
 	set_bool_attribute(ID::blackbox);
 }
 
