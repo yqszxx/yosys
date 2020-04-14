@@ -64,6 +64,9 @@ struct SynthIce40Pass : public ScriptPass
 		log("    -noflatten\n");
 		log("        do not flatten design before synthesis\n");
 		log("\n");
+		log("    -dff\n");
+		log("        run 'abc'/'abc9' with -dff option\n");
+		log("\n");
 		log("    -retime\n");
 		log("        run 'abc' with '-dff -D 1' options\n");
 		log("\n");
@@ -106,7 +109,7 @@ struct SynthIce40Pass : public ScriptPass
 	}
 
 	string top_opt, blif_file, edif_file, json_file, device_opt;
-	bool nocarry, nodffe, nobram, dsp, flatten, retime, noabc, abc2, vpr, abc9, flowmap;
+	bool nocarry, nodffe, nobram, dsp, flatten, retime, noabc, abc2, vpr, abc9, dff, flowmap;
 	int min_ce_use;
 
 	void clear_flags() YS_OVERRIDE
@@ -212,6 +215,10 @@ struct SynthIce40Pass : public ScriptPass
 			}
 			if (args[argidx] == "-abc9") {
 				abc9 = true;
+				continue;
+			}
+			if (args[argidx] == "-dff") {
+				dff = true;
 				continue;
 			}
 			if (args[argidx] == "-device" && argidx+1 < args.size()) {
@@ -349,7 +356,9 @@ struct SynthIce40Pass : public ScriptPass
 				run(stringf("dff2dffe -unmap-mince %d", min_ce_use));
 				run("simplemap t:$dff");
 			}
-			run("techmap -D NO_LUT -D NO_ADDER -map +/ice40/cells_map.v");
+			if ((abc9 && dff) || help_mode)
+				run("zinit -all", "(-abc9 and -dff only)");
+			run("techmap -map +/ice40/ff_map.v");
 			run("opt_expr -mux_undef");
 			run("simplemap");
 			run("ice40_ffinit");
@@ -366,10 +375,10 @@ struct SynthIce40Pass : public ScriptPass
 			run("techmap -map +/ice40/latches_map.v");
 			if (noabc || flowmap || help_mode) {
 				run("simplemap", "                               (if -noabc or -flowmap)");
-                if (noabc || help_mode)
-				    run("techmap -map +/gate2lut.v -D LUT_WIDTH=4", "(only if -noabc)");
-                if (flowmap || help_mode)
-                    run("flowmap -maxlut 4", "(only if -flowmap)");
+				if (noabc || help_mode)
+					run("techmap -map +/gate2lut.v -D LUT_WIDTH=4", "(only if -noabc)");
+				if (flowmap || help_mode)
+					run("flowmap -maxlut 4", "(only if -flowmap)");
 			}
 			if (!noabc) {
 				if (abc9) {
@@ -381,23 +390,33 @@ struct SynthIce40Pass : public ScriptPass
 						wire_delay = 750;
 					else
 						wire_delay = 250;
-					run(stringf("abc9 -W %d", wire_delay));
+					run(stringf("abc9 -W %d %s", wire_delay, dff ? "-dff" : ""));
 				}
-				else
-					run("abc -dress -lut 4", "(skip if -noabc)");
+				else {
+					run(stringf("abc -dress -lut 4 %s", dff ? "-dff" : ""), "(skip if -noabc)");
+				}
 			}
 			run("ice40_wrapcarry -unwrap");
-			run("techmap -D NO_LUT -map +/ice40/cells_map.v");
+			run("techmap -map +/ice40/ff_map.v");
 			run("clean");
 			run("opt_lut -dlogic SB_CARRY:I0=2:I1=1:CI=0");
 		}
 
 		if (check_label("map_cells"))
 		{
-			if (vpr)
-				run("techmap -D NO_LUT -map +/ice40/cells_map.v");
-			else
-				run("techmap -map +/ice40/cells_map.v", "(with -D NO_LUT in vpr mode)");
+			if (help_mode)
+				run("techmap [-map +/ice40/ff_map.v] [-map +/ice40/cells_map.v]", "(skip if -abc9; skip if -vpr)");
+			else if (vpr)
+				run("techmap -map +/ice40/ff_map.v");
+			else {
+				std::string techmap_args;
+				if (!abc9)
+					techmap_args += " -map +/ice40/ff_map.v";
+				if (!vpr)
+					techmap_args += " -map +/ice40/cells_map.v";
+				if (!techmap_args.empty())
+					run("techmap " + techmap_args);
+			}
 
 			run("clean");
 		}
